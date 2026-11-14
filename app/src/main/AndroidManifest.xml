@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Per-permission justifications and denied-state degradation live
+        in the audit log at .claude/rules/permissions.md (the SSOT, which
+        also holds the procedure for adding a permission). Comments below
+        cover only manifest mechanics (e.g. optional hardware).
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!--
+        Declare location hardware as optional so Play does not implicitly
+        hard-require GPS / network-location hardware (requesting the
+        location permissions above otherwise implies required=true). The
+        location-driven panels degrade gracefully — they emit null until
+        a fix is available — so a head unit or region without this
+        hardware must still see and install the launcher (multi-region
+        distribution).
+    -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
+
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!--
+        Declare telephony hardware as optional so Play does not implicitly
+        hard-require it (requesting READ_PHONE_STATE above otherwise implies
+        required=true). Wi-Fi-only AI boxes have no telephony
+        hardware; the cellular indicator degrades — cellularFlow()
+        and cellularLevelFlow() guard FEATURE_TELEPHONY and emit null — so
+        such units must still see and install the launcher (multi-region
+        distribution). See AGENTS.md#launcher-behavior.
+    -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!--
+        media3-exoplayer's library manifest requests WAKE_LOCK: left to its
+        defaults, the player enables a local wake lock for its
+        stuck-playback detection. The video window opts out
+        (setWakeMode(C.WAKE_MODE_NONE) in ExoVideoPlayer), so the merged
+        entry is removed and a dependency cannot add a permission the audit
+        log does not list.
+    -->
+    <uses-permission
+        android:name="android.permission.WAKE_LOCK"
+        tools:node="remove" />
+
+    <!--
+        Declare microphone hardware as optional so Play does not implicitly
+        hard-require it (requesting RECORD_AUDIO above otherwise implies
+        required=true). Head units without a mic must still see and install
+        the launcher (multi-region distribution); the voice surface degrades
+        to delegation there.
+    -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!--
+        Package visibility: declare interest in every app that registers
+        the LAUNCHER intent so LauncherApps.getActivityList() returns the
+        full set on Android 11+. This is the privacy-respecting path
+        recommended by .claude/rules/permissions.md (the alternative,
+        QUERY_ALL_PACKAGES, requires a Play Store justification).
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!--
+            Resolve the device's default assistant so the dock mic can hand
+            off to its overlay directly (and fall back to the in-launcher
+            voice sheet when nothing resolves).
+        -->
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.FemtoCarLauncher">
+        <!--
+          uiMode is handled in place. Without it a system light/dark flip destroys
+          and recreates the launcher: the dashboard blanks, the map WebView is torn
+          down and rebuilt, and the relaunch comes back through the splash — so the
+          theme appears to change *after* the launcher has finished starting.
+          Handled here, the new Configuration reaches Compose, isSystemInDarkTheme()
+          recomposes, and FemtoTheme cross-fades in place with the content intact.
+          The one resource this bypasses is the theme's windowLightStatusBar; the
+          bar icons are driven from the composed flag instead (applyBarIconContrast),
+          which is also the only way they can follow a user ThemeMode override.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="uiMode"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".data.music.MusicSessionListenerService"
+            android:label="@string/music_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".TripTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!--
+            The updater's receivers: install-session statuses (addressed
+            explicitly by each session's PendingIntent) and the replacement
+            of this package. Neither is exported; broadcasts the system
+            sends still reach a receiver that is not.
+        -->
+        <receiver
+            android:name=".data.update.InstallStatusReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".data.update.PackageReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Acertt Car prototype monogram. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F33442"
+        android:pathData="M26,67 L49,39 H64 L68,67 H57 L56,61 H43 L38,67 Z M49,53 H55 L54,46 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M71,39 H83 L78,45 H72 Z M73,50 H79 L74,56 Z" />
+</vector>

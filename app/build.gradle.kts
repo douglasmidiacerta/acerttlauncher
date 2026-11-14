@@ -1,0 +1,418 @@
+import com.github.gradle.node.pnpm.task.PnpmTask
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.aboutlibraries)
+    alias(libs.plugins.androidx.room)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.node.gradle)
+    alias(libs.plugins.roborazzi)
+    alias(libs.plugins.spotless)
+}
+
+// The LIVE map page is TypeScript under webmap/ (the web-payload SSOT), built
+// with pnpm + Vite into webmap/dist/web and wired into the assets source set
+// below — nothing under src/main/assets/web is committed. download = true makes
+// the build hermetic: Gradle provisions Node + pnpm, so neither local builds
+// nor CI need a system Node.
+node {
+    download = true
+    // renovate: datasource=node-version depName=node
+    version = "26.13.0"
+    // null suppresses the plugin's own repository registration; the Node.js
+    // ivy repository lives in settings.gradle.kts (FAIL_ON_PROJECT_REPOS).
+    distBaseUrl = null
+    // Mirrors webmap/package.json "packageManager" (the pin pnpm itself reads
+    // when invoked directly); this copy provisions the Gradle-managed install.
+    // renovate: datasource=npm depName=pnpm
+    pnpmVersion = "12.18.0"
+    nodeProjectDir = file("../webmap")
+}
+
+val buildWebMap =
+    tasks.register<PnpmTask>("buildWebMap") {
+        dependsOn(tasks.named("pnpmInstall"))
+        pnpmCommand.set(listOf("run", "build"))
+        inputs.dir("../webmap/src")
+        // The build script also runs scripts/third-party-notices.mjs, whose output
+        // lands in dist/; an edit to it must invalidate the task like a source edit.
+        inputs.dir("../webmap/scripts")
+        inputs.files(
+            "../webmap/index.html",
+            "../webmap/no-let.js",
+            "../webmap/package.json",
+            "../webmap/pnpm-lock.yaml",
+            "../webmap/pnpm-workspace.yaml",
+            "../webmap/tsconfig.json",
+            "../webmap/vite.config.ts",
+        )
+        outputs.dir("../webmap/dist")
+    }
+
+tasks.named("preBuild") {
+    dependsOn(buildWebMap)
+}
+
+// Geocoder and weather hosts are threaded in via gitignored local.properties so
+// a self-hosted caching proxy can be substituted without a code change.
+// GEOCODER_BASE_URL is EMPTY by default: the launcher then uses the on-device
+// platform geocoder, because no public reverse-geocoding endpoint is
+// ToS-compliant to ship. Set it to a self-hosted Nominatim-compatible host (with
+// GEOCODER_API_KEY when keyed) to use network geocoding. The weather default
+// (api.met.no) is free for commercial use and ToS-compliant — it needs no API
+// key, only the identifying User-Agent the client sets. FONTS_METADATA_BASE_URL
+// overrides the Google Fonts catalog host (e.g. a caching proxy); the TTF bytes
+// still come from the URLs the per-family manifest supplies, so no download host
+// field exists. MAP_TILE_HOST is the origin the OSM map page loads tiles, styles,
+// sprites and glyphs from (the OpenFreeMap layout; every request to the upstream
+// origin is re-pointed at it) and MAP_TERRAIN_TILEJSON_URL the raster-DEM TileJSON
+// behind the Terrain switch — both keyless volunteer services with no availability
+// commitment, so a self-hosted mirror must be a build-time (or, for the tile host,
+// a Settings) swap rather than a code change. UPDATE_FEED_BASE_URL must explicitly
+// point to the release page for this application ID to enable the updater.
+val localProperties =
+    Properties().apply {
+        rootProject
+            .file("local.properties")
+            .takeIf { it.exists() }
+            ?.inputStream()
+            ?.use { load(it) }
+    }
+val geocoderBaseUrl = localProperties.getProperty("GEOCODER_BASE_URL", "")
+val geocoderApiKey = localProperties.getProperty("GEOCODER_API_KEY", "")
+val weatherBaseUrl = localProperties.getProperty("WEATHER_BASE_URL", "https://api.met.no/")
+val fontsMetadataBaseUrl = localProperties.getProperty("FONTS_METADATA_BASE_URL", "https://fonts.google.com/")
+val mapTileHost = localProperties.getProperty("MAP_TILE_HOST", "https://tiles.openfreemap.org")
+val mapTerrainTileJsonUrl =
+    localProperties.getProperty("MAP_TERRAIN_TILEJSON_URL", "https://tiles.mapterhorn.com/tilejson.json")
+val updateFeedBaseUrl = localProperties.getProperty("UPDATE_FEED_BASE_URL", "").trim()
+// Release signing is driven entirely by environment variables so CI can sign
+// both channels' release APKs without committing a keystore, while a local
+// `assembleStableRelease` / `assembleNightlyRelease` stays unsigned (no signing
+// config attached) when the variables are absent.
+val releaseKeystorePath: String? = System.getenv("RELEASE_KEYSTORE_PATH")
+
+// JUnit category of the screenshot-catalog generator: excluded from the unit
+// test tasks, included only by generateCatalog (both below).
+val catalogCategory = "io.github.seijikohara.femto.catalog.CatalogGeneration"
+
+spotless {
+    val ktlintVersion = libs.versions.ktlint.get()
+    val composeRulesVersion = libs.versions.ktlintComposeRules.get()
+    kotlin {
+        target("src/**/*.kt")
+        targetExclude("**/build/**")
+        ktlint(ktlintVersion)
+            .customRuleSets(
+                listOf("io.nlopez.compose.rules:ktlint:$composeRulesVersion"),
+            )
+    }
+}
+
+android {
+    namespace = "io.github.seijikohara.femto"
+    // compileSdk 37: androidx.core(-ktx) 1.19.0 requires compiling against API 37+.
+    // minSdk is 29 (Android 10) and targetSdk stays 36 — only the compile
+    // target advances, not the supported-device floor or the runtime opt-in.
+    compileSdk {
+        version = release(37)
+    }
+
+    buildToolsVersion = libs.versions.androidBuildTools.get()
+
+    // Pinned NDK for the native Vulkan trip-flyover renderer (app/src/main/cpp).
+    // The version lives in the catalog (SSOT); CI provisions the same NDK.
+    ndkVersion = libs.versions.ndk.get()
+
+    defaultConfig {
+        applicationId = "br.com.acerttcar.launcher"
+        minSdk = 29
+        targetSdk = 36
+        // CI injects versionCode/versionName: .github/actions/app-version
+        // computes the date version for both channels, and the nightly and
+        // release jobs in .github/workflows/ci.yml pass it in. Local builds
+        // fall back to the committed 1 / "0.1.0". A VERSION_CODE that is set but
+        // unparseable fails the build instead of silently falling back to 1:
+        // this path now cuts permanent releases, and no device could ever
+        // accept 1 as an update. VERSION_NAME needs no such check — any
+        // string is a valid versionName.
+        // Read once: UPDATE_CHECK_ENABLED below reuses this same presence check
+        // rather than calling System.getenv again, so the two fields can't disagree
+        // on which build this is.
+        val versionCodeEnv = System.getenv("VERSION_CODE")
+        versionCode =
+            versionCodeEnv?.let {
+                it.toIntOrNull() ?: error("VERSION_CODE is set but not a valid integer: \"$it\"")
+            } ?: 1
+        versionName = System.getenv("VERSION_NAME") ?: "0.1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GEOCODER_BASE_URL", "\"${geocoderBaseUrl}\"")
+        buildConfigField("String", "GEOCODER_API_KEY", "\"${geocoderApiKey}\"")
+        buildConfigField("String", "WEATHER_BASE_URL", "\"${weatherBaseUrl}\"")
+        buildConfigField("String", "FONTS_METADATA_BASE_URL", "\"${fontsMetadataBaseUrl}\"")
+        buildConfigField("String", "MAP_TILE_HOST", "\"${mapTileHost}\"")
+        buildConfigField("String", "MAP_TERRAIN_TILEJSON_URL", "\"${mapTerrainTileJsonUrl}\"")
+        buildConfigField("String", "UPDATE_FEED_BASE_URL", "\"${updateFeedBaseUrl}\"")
+        // CI always injects VERSION_CODE (and a local E2E build can too); a plain
+        // local build stays debug-signed. A versioned build also needs a feed
+        // configured explicitly to discover updates for this application ID.
+        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "${versionCodeEnv != null && updateFeedBaseUrl.isNotEmpty()}")
+
+        // Include 32-bit Android installations on ARM head units. The trip
+        // renderer falls back to 2D when the device has no usable Vulkan driver.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+
+        externalNativeBuild {
+            cmake {
+                // Vulkan 1.1 baseline (guaranteed on every API 33 device that has
+                // a Vulkan driver); the loader lives in the platform.
+                arguments += "-DANDROID_STL=c++_static"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = libs.versions.cmake.get()
+        }
+    }
+
+    signingConfigs {
+        // Only register the release signing config when CI supplies a keystore path
+        // via env; absent it, `signingConfigs.findByName("release")` returns null and
+        // the release build stays unsigned so local `assembleStableRelease` still works.
+        releaseKeystorePath?.let { keystorePath ->
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Null when no env-driven keystore is present, leaving the release build
+            // unsigned for local contributors; CI attaches the "release" config above.
+            signingConfig = signingConfigs.findByName("release")
+            // Intentionally unminified: the launcher is a small, reflection-light app
+            // and keeping R8 off removes a class of release-only stripping bugs. The
+            // keep rules in proguard-rules.pro stay R8-ready so this flag can flip to
+            // true later without a separate audit.
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+        debug {
+            // Pseudolocales surface text-fit / RTL regressions on debug builds without
+            // authoring translations: en-XA accents and lengthens Latin text (~+30%),
+            // ar-XB mirrors the layout right-to-left. Debug-only; never shipped.
+            isPseudoLocalesEnabled = true
+        }
+    }
+    // Two distribution channels as one dimension: they differ in identity and
+    // resources, not in build settings, which is what a flavor is for. Nightly
+    // carries a package suffix so both APKs install side by side — a tester
+    // switching channels never has to uninstall the launcher (Android has no
+    // public downgrade path, and this app is the home screen).
+    flavorDimensions += "channel"
+    productFlavors {
+        create("stable") {
+            dimension = "channel"
+        }
+        create("nightly") {
+            dimension = "channel"
+            applicationIdSuffix = ".nightly"
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    sourceSets {
+        getByName("main") {
+            // Serve the built web payload (webmap/dist/web/...) as assets/web/...;
+            // see the node {} block above.
+            assets.directories.add(rootProject.file("webmap/dist").path)
+        }
+        // One SSOT for the fixture builders both the JVM unit tests and the
+        // instrumented tests need: src/sharedTest is compiled into each, so the
+        // copies can no longer drift (they used to be duplicated per source set).
+        // Wired through kotlin.directories (not java.directories) so the Kotlin test
+        // compilations pick the builders up.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
+    }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            // Plain JVM unit tests (NominatimApiTest) reach android.util.Log on
+            // the failure path; without this the stub throws "not mocked".
+            // Returning defaults lets the void Log calls no-op instead.
+            isReturnDefaultValues = true
+            // The screenshot-catalog generator (DashboardCatalogTest) renders
+            // 960 images; it belongs to the generateCatalog task below, never to
+            // `test` / verifyRoborazziStableDebug.
+            all { it.useJUnit { excludeCategories(catalogCategory) } }
+        }
+    }
+    lint {
+        // Lint the shipped code only. lintAnalyzeDebugUnitTest + lintAnalyzeDebugAndroidTest
+        // dominated CI lint time (~63s combined, vs ~1s for the main sources); test-code
+        // lint findings carry little value since tests are not shipped.
+        ignoreTestSources = true
+    }
+}
+
+androidComponents {
+    // Nightly ships only as a release-signed build; a nightlyDebug variant
+    // would be one nobody builds, so it never enters the task graph.
+    beforeVariants(selector().withBuildType("debug").withFlavor("channel" to "nightly")) {
+        it.enable = false
+    }
+}
+
+// Room schema JSON is exported per version so future migrations diff against a
+// committed baseline instead of a developer's memory.
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
+// AboutLibraries collects each Gradle dependency's license at build time into
+// res/raw/aboutlibraries.json (bundled, so the licenses screen works offline on
+// the head unit). Non-Gradle components the app ships or draws on — the webmap
+// JS bundle, the map data / style / tile / terrain providers, the weather data —
+// are declared as manual entries under app/config, the single home for those
+// credits (see .claude/rules/webmap.md).
+aboutLibraries {
+    collect {
+        configPath = file("config")
+    }
+}
+
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.material)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.webkit)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(platform(libs.okhttp.bom))
+    implementation(libs.okhttp)
+    implementation(libs.aboutlibraries.core)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.material.kolor)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
+    implementation(libs.composables.icons.lucide)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    testImplementation(platform(libs.okhttp.bom))
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.turbine)
+    // Roborazzi JVM/Robolectric screenshot tests render Compose, so the unit-test
+    // classpath needs the Compose test harness (via the BOM) alongside Roborazzi.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.kotlin.test)
+}
+
+// The dashboard screenshot catalog for the project website (docs/): every
+// geometry × display size × theme × driver side × dock position, rendered by
+// Roborazzi in record mode into build/outputs/catalog (manifest.json + img/).
+// A plain Test task that borrows the debug unit-test classpath: the Roborazzi
+// plugin only wires its own task names, and the library reads the mode from
+// system properties (roborazzi.test.record), so setting that here is all the
+// integration needed. `-Pfemto.catalog.filter=<regex>` limits the entries
+// (CI renders one image as a smoke test).
+tasks.register<Test>("generateCatalog") {
+    group = "documentation"
+    description = "Render the dashboard screenshot catalog into build/outputs/catalog (docs site input)"
+    val unitTest = tasks.named<Test>("testStableDebugUnitTest").get()
+    testClassesDirs = unitTest.testClassesDirs
+    classpath = unitTest.classpath
+    systemProperties(unitTest.systemProperties)
+    jvmArgs(unitTest.jvmArgs)
+    // 2000×1200 ARGB captures at a fast clip; the default heap trips GC storms.
+    maxHeapSize = "2g"
+    useJUnit { includeCategories(catalogCategory) }
+    systemProperty("roborazzi.test.record", "true")
+    // Isolates results from testStableDebugUnitTest's own declared output dir
+    // (overlap disables its local build cache).
+    val roborazziResultDir = layout.buildDirectory.dir("test-results/generateCatalog/roborazzi")
+    systemProperty("roborazzi.result.dir", roborazziResultDir.get().asFile.path)
+    // Both resolved at configuration time on purpose: that registers the Gradle
+    // property, the environment variable and the git output as configuration
+    // cache inputs, so a changed filter or a new commit invalidates the cached
+    // task graph instead of replaying the values it was stored with. As system
+    // properties they are task inputs too, so the render re-runs on a change.
+    systemProperty("femto.catalog.filter", providers.gradleProperty("femto.catalog.filter").getOrElse(""))
+    systemProperty(
+        "femto.catalog.gitSha",
+        providers
+            .environmentVariable("GITHUB_SHA")
+            .orElse(
+                providers
+                    .exec {
+                        commandLine("git", "rev-parse", "HEAD")
+                        // Git may be missing outside a checkout; CatalogRun.gitSha maps empty output to "unknown".
+                        isIgnoreExitValue = true
+                    }.standardOutput.asText
+                    .map(String::trim),
+            ).get(),
+    )
+    val outputDir = layout.buildDirectory.dir("outputs/catalog")
+    outputs.dir(outputDir)
+    // Test tasks are cacheable by default, which here would push ~1 GB of PNGs
+    // into the build cache (CI persists it) for nothing: a repeat run with the
+    // same inputs is UP-TO-DATE anyway, and a hit from another commit would
+    // restore a manifest carrying that commit's gitSha.
+    outputs.doNotCacheIf("the catalog is ~1 GB of PNGs and embeds the commit SHA") { true }
+    doFirst {
+        // A stale image from a previous, differently filtered run must not
+        // survive into the catalog the docs workflow uploads. Plain file I/O,
+        // not Project.delete: the build runs with the configuration cache, which
+        // forbids touching the Project at execution time.
+        outputDir.get().asFile.deleteRecursively()
+        roborazziResultDir.get().asFile.deleteRecursively()
+    }
+}
