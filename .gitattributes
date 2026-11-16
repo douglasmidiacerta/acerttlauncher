@@ -1,0 +1,2 @@
+# Keep web map checkouts aligned with the line endings expected by oxfmt.
+webmap/** text=auto eol=lf

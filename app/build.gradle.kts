@@ -161,7 +161,11 @@ android {
         // CI always injects VERSION_CODE (and a local E2E build can too); a plain
         // local build stays debug-signed. A versioned build also needs a feed
         // configured explicitly to discover updates for this application ID.
-        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "${versionCodeEnv != null && updateFeedBaseUrl.isNotEmpty()}")
+        buildConfigField(
+            "boolean",
+            "UPDATE_CHECK_ENABLED",
+            "${versionCodeEnv != null && updateFeedBaseUrl.isNotEmpty()}",
+        )
 
         // Include 32-bit Android installations on ARM head units. The trip
         // renderer falls back to 2D when the device has no usable Vulkan driver.
