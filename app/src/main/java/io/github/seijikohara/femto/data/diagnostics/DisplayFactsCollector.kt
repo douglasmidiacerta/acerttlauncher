@@ -3,11 +3,13 @@ package io.github.seijikohara.femto.data.diagnostics
 import android.content.Context
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
+import android.os.Build
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.annotation.RequiresApi
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -121,27 +123,36 @@ internal class DisplayFactsCollector(
             val display = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
             // The application context can't query window metrics; a
             // display-scoped context is the only way to reach
-            // WindowManager.currentWindowMetrics/maximumWindowMetrics.
+            // WindowManager.currentWindowMetrics/maximumWindowMetrics on API 30+.
             val displayContext = context.createDisplayContext(display)
-            val windowManager = displayContext.getSystemService<WindowManager>()!!
-            val current = windowManager.currentWindowMetrics
-            val maximum = windowManager.maximumWindowMetrics
             val metrics = displayContext.resources.displayMetrics
             val configuration = displayContext.resources.configuration
+            val windowBounds =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    windowBoundsApi30(displayContext)
+                } else {
+                    WindowBounds(
+                        boundsPx = "${metrics.widthPixels}x${metrics.heightPixels}",
+                        maxBoundsPx = "${metrics.widthPixels}x${metrics.heightPixels}",
+                        widthPx = metrics.widthPixels,
+                        heightPx = metrics.heightPixels,
+                        cutoutFact = DiagnosticFact("Cutout / insets", FactValue.Text("unavailable (API < 30)")),
+                    )
+                }
 
             SectionPayload.Facts(
                 buildList {
                     addAll(
                         displayGeometryFacts(
-                            boundsPx = "${current.bounds.width()}x${current.bounds.height()}",
-                            maxBoundsPx = "${maximum.bounds.width()}x${maximum.bounds.height()}",
+                            boundsPx = windowBounds.boundsPx,
+                            maxBoundsPx = windowBounds.maxBoundsPx,
                             densityDpi = metrics.densityDpi,
                             stableDensityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE,
                             density = metrics.density,
                             xdpi = metrics.xdpi,
                             ydpi = metrics.ydpi,
-                            widthPx = maximum.bounds.width(),
-                            heightPx = maximum.bounds.height(),
+                            widthPx = windowBounds.widthPx,
+                            heightPx = windowBounds.heightPx,
                             screenWidthDp = configuration.screenWidthDp,
                             screenHeightDp = configuration.screenHeightDp,
                             smallestScreenWidthDp = configuration.smallestScreenWidthDp,
@@ -172,10 +183,16 @@ internal class DisplayFactsCollector(
                     add(
                         DiagnosticFact(
                             "HDR / wide gamut",
-                            FactValue.Text("${display.isHdr} / ${configuration.isScreenWideColorGamut}"),
+                            FactValue.Text(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    "${display.isHdr} / ${configuration.isScreenWideColorGamut}"
+                                } else {
+                                    "unavailable (API < 26)"
+                                },
+                            ),
                         ),
                     )
-                    add(cutoutInsetsFact(current.windowInsets))
+                    add(windowBounds.cutoutFact)
                     add(
                         DiagnosticFact(
                             "Displays",
@@ -194,6 +211,21 @@ internal class DisplayFactsCollector(
             )
         }
 
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun windowBoundsApi30(displayContext: Context): WindowBounds {
+        val windowManager = displayContext.getSystemService<WindowManager>()!!
+        val current = windowManager.currentWindowMetrics
+        val maximum = windowManager.maximumWindowMetrics
+        return WindowBounds(
+            boundsPx = "${current.bounds.width()}x${current.bounds.height()}",
+            maxBoundsPx = "${maximum.bounds.width()}x${maximum.bounds.height()}",
+            widthPx = maximum.bounds.width(),
+            heightPx = maximum.bounds.height(),
+            cutoutFact = cutoutInsetsFact(current.windowInsets),
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun cutoutInsetsFact(windowInsets: WindowInsets): DiagnosticFact {
         val statusBarInsets = windowInsets.getInsets(WindowInsets.Type.statusBars())
         val navBarInsets = windowInsets.getInsets(WindowInsets.Type.navigationBars())
@@ -205,6 +237,14 @@ internal class DisplayFactsCollector(
             ),
         )
     }
+
+    private class WindowBounds(
+        val boundsPx: String,
+        val maxBoundsPx: String,
+        val widthPx: Int,
+        val heightPx: Int,
+        val cutoutFact: DiagnosticFact,
+    )
 
     private fun screenTimeoutLabel(displayContext: Context): String =
         Settings.System

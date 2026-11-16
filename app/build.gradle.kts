@@ -115,7 +115,7 @@ spotless {
 android {
     namespace = "io.github.seijikohara.femto"
     // compileSdk 37: androidx.core(-ktx) 1.19.0 requires compiling against API 37+.
-    // minSdk is 29 (Android 10) and targetSdk stays 36 — only the compile
+    // minSdk is 24 (Android 7.0) and targetSdk stays 36 — only the compile
     // target advances, not the supported-device floor or the runtime opt-in.
     compileSdk {
         version = release(37)
@@ -129,7 +129,7 @@ android {
 
     defaultConfig {
         applicationId = "br.com.acerttcar.launcher"
-        minSdk = 29
+        minSdk = 24
         targetSdk = 36
         // CI injects versionCode/versionName: .github/actions/app-version
         // computes the date version for both channels, and the nightly and
@@ -239,6 +239,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -306,6 +307,7 @@ aboutLibraries {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.material)

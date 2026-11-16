@@ -3,7 +3,9 @@ package io.github.seijikohara.femto.data.diagnostics
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.os.Build
 import androidx.core.content.getSystemService
+import androidx.core.content.pm.PackageInfoCompat
 import io.github.seijikohara.femto.BuildConfig
 import io.github.seijikohara.femto.data.update.UpdateChannel
 import io.github.seijikohara.femto.data.update.UpdatePreferences
@@ -131,7 +133,12 @@ internal class AppFactsCollector(
                             ),
                         ),
                     )
-                    add(DiagnosticFact("Version code", FactValue.Text(packageInfo.longVersionCode.toString())))
+                    add(
+                        DiagnosticFact(
+                            "Version code",
+                            FactValue.Text(PackageInfoCompat.getLongVersionCode(packageInfo).toString()),
+                        ),
+                    )
                     add(
                         DiagnosticFact(
                             "Installed",
@@ -141,15 +148,14 @@ internal class AppFactsCollector(
                             ),
                         ),
                     )
-                    add(
-                        DiagnosticFact(
-                            "Installer",
-                            FactValue.Text(
-                                packageManager.getInstallSourceInfo(context.packageName).installingPackageName
-                                    ?: "sideload/unknown",
-                            ),
-                        ),
-                    )
+                    val installer =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+                                ?: "sideload/unknown"
+                        } else {
+                            "unavailable (API < 30)"
+                        }
+                    add(DiagnosticFact("Installer", FactValue.Text(installer)))
                     add(channelFact(BuildConfig.FLAVOR))
                     add(
                         updateCheckFact(
@@ -163,6 +169,11 @@ internal class AppFactsCollector(
 
     suspend fun crashHistory(): SectionPayload.Facts =
         withContext(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                return@withContext SectionPayload.Facts(
+                    listOf(DiagnosticFact("Exit history", FactValue.Text("unavailable (API < 30)"))),
+                )
+            }
             val exitInfos =
                 context
                     .getSystemService<ActivityManager>()

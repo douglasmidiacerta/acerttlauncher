@@ -6,7 +6,6 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.test.core.app.ApplicationProvider
 import io.github.seijikohara.femto.R
-import io.github.seijikohara.femto.testfixtures.fakeSystemStatus
 import io.github.seijikohara.femto.ui.theme.FemtoTheme
 import org.junit.Rule
 import org.junit.Test
@@ -35,7 +34,7 @@ class DashboardDockUpdateBadgeTest {
     private fun setDock(updateBadge: Boolean) {
         rule.setContent {
             FemtoTheme {
-                DashboardDock(systemStatus = fakeSystemStatus(), onAction = {}, updateBadge = updateBadge)
+                DashboardDock(onAction = {}, updateBadge = updateBadge)
             }
         }
         rule.waitForIdle()

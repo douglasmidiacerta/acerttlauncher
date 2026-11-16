@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.location.Location
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -988,7 +989,11 @@ internal class LiveMapWebViewClient(
     override fun onRenderProcessGone(
         view: WebView,
         detail: RenderProcessGoneDetail,
-    ): Boolean = onRendererGone(view, crashed = detail.didCrash())
+    ): Boolean =
+        onRendererGone(
+            view,
+            crashed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && detail.didCrash(),
+        )
 
     // The containment itself, apart from the platform's detail object (which
     // apps may not construct), so tests can report a death. The dead view must

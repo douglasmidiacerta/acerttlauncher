@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import io.github.seijikohara.femto.data.common.withAppLocale
 import io.github.seijikohara.femto.data.display.DisplayPreferences
 import io.github.seijikohara.femto.data.location.LocationGraph
 import io.github.seijikohara.femto.data.location.TripState
@@ -58,6 +59,10 @@ internal class TripTrackingService : Service() {
     // MainActivity's lifecycle observer); promote and start collecting only once.
     private var started = false
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase.withAppLocale())
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -80,7 +85,11 @@ internal class TripTrackingService : Service() {
                 this,
                 NOTIFICATION_ID,
                 buildNotification(seed),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                } else {
+                    0
+                },
             )
             collectTripMetrics()
         }

@@ -6,9 +6,11 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
+import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
+import androidx.core.content.pm.PermissionInfoCompat
 import io.github.seijikohara.femto.data.common.hasInstallUnknownAppsAccess
 import io.github.seijikohara.femto.data.common.holdsHomeRole
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +84,8 @@ internal class PermissionFactsCollector(
     // crashing the whole section.
     private fun String.isDangerousPermission(packageManager: PackageManager): Boolean =
         runCatching {
-            packageManager.getPermissionInfo(this, 0).protection == PermissionInfo.PROTECTION_DANGEROUS
+            PermissionInfoCompat.getProtection(packageManager.getPermissionInfo(this, 0)) ==
+                PermissionInfo.PROTECTION_DANGEROUS
         }.getOrDefault(false)
 
     private fun notificationListenerFact(): DiagnosticFact {
@@ -137,6 +140,9 @@ internal class PermissionFactsCollector(
     }
 
     private fun backgroundFact(): DiagnosticFact {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return DiagnosticFact("Background", FactValue.Text("unavailable (API < 28)"))
+        }
         val restricted = context.getSystemService<ActivityManager>()?.isBackgroundRestricted == true
         return DiagnosticFact(
             "Background",

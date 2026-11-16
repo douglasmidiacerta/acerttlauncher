@@ -3,9 +3,11 @@ package io.github.seijikohara.femto
 import android.Manifest
 import android.app.SearchManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -35,9 +37,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.seijikohara.femto.data.apps.AppsRepository
+import io.github.seijikohara.femto.data.common.applyAppLocale
 import io.github.seijikohara.femto.data.common.hasBluetoothConnectPermission
 import io.github.seijikohara.femto.data.common.hasReadCalendarPermission
 import io.github.seijikohara.femto.data.common.hasReadPhoneStatePermission
+import io.github.seijikohara.femto.data.common.withAppLocale
 import io.github.seijikohara.femto.data.display.AssistantLaunchSetting
 import io.github.seijikohara.femto.data.display.ClockSetting
 import io.github.seijikohara.femto.data.display.DisplayPreferences
@@ -115,6 +119,14 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             SystemPermissionSignals.refreshes.tryEmit(Unit)
         }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase.withAppLocale())
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig.applyAppLocale())
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()

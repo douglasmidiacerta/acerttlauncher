@@ -192,6 +192,7 @@
          cover the horizontal case. -->
     <string name="dock_move_up">Move up</string>
     <string name="dock_move_down">Move down</string>
+    <string name="dock_brand_logo_desc">Acertt Car</string>
     <!-- Accessibility label of the update dot, on the dock's Settings button and on the
          Updates entry of the Settings category list, while an update is on offer. -->
     <string name="update_available">Update available</string>

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.location.LocationManager
+import android.os.Build
 import android.os.LocaleList
 import android.os.SystemClock
 import android.provider.Settings
@@ -13,6 +14,7 @@ import android.text.format.DateFormat
 import android.view.InputDevice
 import android.view.View
 import androidx.core.content.getSystemService
+import androidx.core.location.LocationManagerCompat
 import io.github.seijikohara.femto.data.location.hasFineLocationPermission
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -126,7 +128,7 @@ internal class EnvironmentFactsCollector(
     }
 
     private fun locationEnabledFact(locationManager: LocationManager): DiagnosticFact {
-        val enabled = locationManager.isLocationEnabled
+        val enabled = LocationManagerCompat.isLocationEnabled(locationManager)
         return DiagnosticFact(
             "Location enabled",
             FactValue.Status(if (enabled) "enabled" else "disabled", if (enabled) FactHealth.OK else FactHealth.ERROR),
@@ -136,7 +138,7 @@ internal class EnvironmentFactsCollector(
     private fun providersFact(locationManager: LocationManager): DiagnosticFact {
         val gps = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         val network =
-            locationManager.hasProvider(LocationManager.NETWORK_PROVIDER) &&
+            LocationManagerCompat.hasProvider(locationManager, LocationManager.NETWORK_PROVIDER) &&
                 locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         return DiagnosticFact("Providers", FactValue.Text("gps=$gps, network=$network"))
     }
@@ -162,6 +164,9 @@ internal class EnvironmentFactsCollector(
     }
 
     private fun gnssHardwareFact(locationManager: LocationManager): DiagnosticFact {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return DiagnosticFact("GNSS hardware", FactValue.Text("unavailable (API < 28)"))
+        }
         val modelName = locationManager.gnssHardwareModelName ?: "unknown"
         val year = locationManager.gnssYearOfHardware.takeIf { it > 0 }?.toString() ?: "unknown"
         return DiagnosticFact("GNSS hardware", FactValue.Text("$modelName (year $year)"))

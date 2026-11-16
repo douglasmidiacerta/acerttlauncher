@@ -64,7 +64,11 @@ internal class PlatformReverseGeocoder(
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private suspend fun getAddressAsync(geocoder: Geocoder, latitude: Double, longitude: Double): Address? =
+    private suspend fun getAddressAsync(
+        geocoder: Geocoder,
+        latitude: Double,
+        longitude: Double,
+    ): Address? =
         suspendCancellableCoroutine { continuation ->
             geocoder.getFromLocation(
                 latitude,

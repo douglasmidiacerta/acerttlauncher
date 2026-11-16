@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiInfo
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.getSystemService
 import io.github.seijikohara.femto.data.common.hasBluetoothConnectPermission
@@ -106,21 +107,32 @@ internal class ConnectivityFactsCollector(
             ),
         )
 
-    // Absent (no active Wi-Fi transport) means the fact is skipped entirely,
-    // not rendered as an empty/placeholder row.
+    // Absent (no active Wi-Fi transport, or API < 29) means the fact is
+    // skipped entirely, not rendered as an empty/placeholder row.
     private fun wifiSignalFact(capabilities: NetworkCapabilities): DiagnosticFact? =
-        (capabilities.transportInfo as? WifiInfo)?.let { wifiInfo ->
-            DiagnosticFact("Wi-Fi signal", FactValue.Text("${wifiInfo.rssi} dBm, ${wifiInfo.linkSpeed} Mbps"))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            (capabilities.transportInfo as? WifiInfo)?.let { wifiInfo ->
+                DiagnosticFact("Wi-Fi signal", FactValue.Text("${wifiInfo.rssi} dBm, ${wifiInfo.linkSpeed} Mbps"))
+            }
+        } else {
+            null
         }
 
     // Privacy floor: server addresses never render, only the private-DNS
     // flag and a count — enough to diagnose "DNS is broken" without leaking
     // the user's resolver configuration into a pasted report.
-    private fun dnsFact(linkProperties: LinkProperties): DiagnosticFact =
-        DiagnosticFact(
+    private fun dnsFact(linkProperties: LinkProperties): DiagnosticFact {
+        val privateDns =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                linkProperties.isPrivateDnsActive.toString()
+            } else {
+                "unknown"
+            }
+        return DiagnosticFact(
             "Private DNS / DNS servers",
-            FactValue.Text("${linkProperties.isPrivateDnsActive}, ${linkProperties.dnsServers.size} servers"),
+            FactValue.Text("$privateDns, ${linkProperties.dnsServers.size} servers"),
         )
+    }
 
     private fun airplaneModeFact(): DiagnosticFact {
         val on = Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0

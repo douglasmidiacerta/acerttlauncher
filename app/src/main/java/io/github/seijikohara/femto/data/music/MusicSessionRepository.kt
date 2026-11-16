@@ -9,6 +9,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -516,13 +517,32 @@ internal class MusicSessionRepository(
     }
 }
 
+private val ActivePlaybackStates =
+    setOf(
+        PlaybackState.STATE_PLAYING,
+        PlaybackState.STATE_FAST_FORWARDING,
+        PlaybackState.STATE_REWINDING,
+        PlaybackState.STATE_BUFFERING,
+        PlaybackState.STATE_CONNECTING,
+        PlaybackState.STATE_SKIPPING_TO_NEXT,
+        PlaybackState.STATE_SKIPPING_TO_PREVIOUS,
+        PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM,
+    )
+
 /**
  * Return `true` when the state is PLAYING or PAUSED. A paused session is
  * still resumable and must stay on the card, so the plain [PlaybackState.isActive]
  * check (which excludes STATE_PAUSED) is not enough here.
  */
 internal fun PlaybackState?.isPlayingOrPaused(): Boolean =
-    this != null && (isActive() || state == PlaybackState.STATE_PAUSED)
+    this != null && (isPlatformActive() || state == PlaybackState.STATE_PAUSED)
+
+private fun PlaybackState.isPlatformActive(): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        isActive
+    } else {
+        state in ActivePlaybackStates
+    }
 
 /**
  * Return `true` when the state is PLAYING. The other half of the pair the card

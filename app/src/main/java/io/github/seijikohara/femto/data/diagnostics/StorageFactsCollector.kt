@@ -1,6 +1,7 @@
 package io.github.seijikohara.femto.data.diagnostics
 
 import android.content.Context
+import android.os.Build
 import android.os.StatFs
 import android.os.storage.StorageManager
 import androidx.core.content.getSystemService
@@ -55,10 +56,14 @@ internal class StorageFactsCollector(
         DiagnosticFact(
             "Allocatable",
             FactValue.Text(
-                runCatching {
-                    val storageManager = context.getSystemService<StorageManager>()!!
-                    "${storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT) / BYTES_PER_MB} MB"
-                }.getOrDefault("unknown"),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    runCatching {
+                        val storageManager = context.getSystemService<StorageManager>()!!
+                        "${storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT) / BYTES_PER_MB} MB"
+                    }.getOrDefault("unknown")
+                } else {
+                    "unavailable (API < 26)"
+                },
             ),
         )
 }

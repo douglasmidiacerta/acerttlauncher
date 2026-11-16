@@ -2,6 +2,9 @@ package io.github.seijikohara.femto.data.common
 
 import android.app.role.RoleManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.content.getSystemService
 
 /**
@@ -11,4 +14,13 @@ import androidx.core.content.getSystemService
  * the background, though not always; see the updater's afterUpdateAction).
  */
 internal fun Context.holdsHomeRole(): Boolean =
-    getSystemService<RoleManager>()?.isRoleHeld(RoleManager.ROLE_HOME) == true
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        getSystemService<RoleManager>()?.isRoleHeld(RoleManager.ROLE_HOME) == true
+    } else {
+        packageManager
+            .resolveActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )?.activityInfo
+            ?.packageName == packageName
+    }

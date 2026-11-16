@@ -3,6 +3,7 @@ package io.github.seijikohara.femto.data.fonts
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.fonts.SystemFonts
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,20 +71,34 @@ internal fun interface SystemFontFileSource {
 }
 
 /**
- * Real [SystemFontFileSource], backed by [SystemFonts.getAvailableFonts]
- * (API 29+; unconditional at this app's minSdk 33). Not every enumerated
+ * Real [SystemFontFileSource], backed by [SystemFonts.getAvailableFonts] on
+ * API 29+ and directory scanning on API 24–28. Not every enumerated
  * [android.graphics.fonts.Font] is file-backed (some platform faces are
  * buffer-only), so entries with no readable file are dropped rather than
  * failing the whole scan.
  */
 internal object PlatformSystemFontFileSource : SystemFontFileSource {
+    private val fontDirectories = listOf("/system/fonts", "/product/fonts", "/system/product/fonts")
+    private val fontExtensions = setOf("ttf", "otf", "ttc")
+
     override fun files(): List<File> =
         runCatching {
-            SystemFonts
-                .getAvailableFonts()
-                .mapNotNull { font -> font.file }
-                .filter { it.isFile }
-                .distinct()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                SystemFonts
+                    .getAvailableFonts()
+                    .mapNotNull { font -> font.file }
+                    .filter { it.isFile }
+                    .distinct()
+            } else {
+                fontDirectories
+                    .flatMap { dir ->
+                        File(dir)
+                            .listFiles { file ->
+                                file.isFile && file.extension.lowercase() in fontExtensions
+                            }?.toList()
+                            .orEmpty()
+                    }.distinct()
+            }
         }.onFailure { Log.w(TAG, "system font enumeration failed", it) }
             .getOrDefault(emptyList())
 }

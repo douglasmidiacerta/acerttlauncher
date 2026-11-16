@@ -2,7 +2,7 @@ package io.github.seijikohara.femto.data.diagnostics
 
 import android.content.Context
 import android.webkit.WebSettings
-import android.webkit.WebView
+import androidx.webkit.WebViewCompat
 import io.github.seijikohara.femto.data.common.femtoUserAgent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,7 +59,7 @@ internal class WebViewFactsCollector(
 ) {
     suspend fun webViewFacts(): SectionPayload.Facts =
         withContext(Dispatchers.IO) {
-            val webViewPackage = WebView.getCurrentWebViewPackage()
+            val webViewPackage = WebViewCompat.getCurrentWebViewPackage(context)
             // Report what the hosts actually see: the map WebView appends the
             // launcher's identifying token to the platform agent (WebMapView).
             val userAgent =

@@ -131,7 +131,11 @@ internal class InstallStatusReceiver(
                 context,
                 sessionId,
                 Intent(context, InstallStatusReceiver::class.java),
-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                },
             )
     }
 }

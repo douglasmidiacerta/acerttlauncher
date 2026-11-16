@@ -571,14 +571,12 @@ private fun DashboardContent(
 
     // The dock as a glass bar / rail on its edge, drawn over the full-bleed map.
     DashboardDock(
-        systemStatus = uiState.systemStatus,
         onAction = overlayAction,
         position = dockPosition,
         dockWidth = dockWidth,
         hazeState = hazeState,
         glassConfig = glassConfig,
         dockConfig = dockConfig,
-        motionTier = motionTier,
         updateBadge = uiState.updateBadge,
         modifier =
             when (dockPosition) {

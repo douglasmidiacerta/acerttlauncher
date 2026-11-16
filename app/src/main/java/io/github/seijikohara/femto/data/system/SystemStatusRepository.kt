@@ -11,7 +11,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -26,6 +25,8 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import androidx.core.location.GnssStatusCompat
+import androidx.core.location.LocationManagerCompat
 import io.github.seijikohara.femto.data.common.hasBluetoothConnectPermission
 import io.github.seijikohara.femto.data.common.hasReadPhoneStatePermission
 import io.github.seijikohara.femto.data.location.LocationRepository
@@ -245,7 +246,7 @@ internal class SystemStatusRepository(
                     val connected =
                         caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
                             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                    trySend(WifiReading(connected = connected, level = wifiLevelFrom(caps)))
+                    trySend(WifiReading(connected = connected, level = wifiLevelFrom(caps, connected)))
                 }
 
                 override fun onLost(network: Network) {
@@ -261,14 +262,17 @@ internal class SystemStatusRepository(
         }
     }
 
-    // NetworkCapabilities.getSignalStrength() (API 30) returns the Wi-Fi RSSI in
+    // NetworkCapabilities.getSignalStrength() (API 29+) returns the Wi-Fi RSSI in
     // dBm reactively via onCapabilitiesChanged, so no RSSI_CHANGED_ACTION poll is
-    // needed. The level map is computed locally over the same -100..-55 dBm
-    // window the platform's legacy calculateSignalLevel(rssi, numLevels) used:
-    // that overload is deprecated, and its replacement instance overload reads
-    // an OEM-configurable ceiling through the Wi-Fi service, which neither pins
-    // the dock's fixed 0..MAX_SIGNAL_LEVEL range nor runs under Robolectric.
-    private fun wifiLevelFrom(caps: NetworkCapabilities): Int {
+    // needed. On API 24–28 a connected Wi-Fi reading falls back to full bars
+    // rather than rendering a zero-signal dot.
+    private fun wifiLevelFrom(
+        caps: NetworkCapabilities,
+        connected: Boolean,
+    ): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return if (connected) MAX_SIGNAL_LEVEL else 0
+        }
         val rssi = caps.signalStrength
         if (rssi == Int.MIN_VALUE) return 0
         return when {
@@ -364,7 +368,7 @@ internal class SystemStatusRepository(
                     trySend(signalStrength.level.coerceIn(0, MAX_SIGNAL_LEVEL))
                 }
             }
-            tm.registerTelephonyCallback(context.mainExecutor, callback)
+            tm.registerTelephonyCallback(ContextCompat.getMainExecutor(context), callback)
             awaitClose { tm.unregisterTelephonyCallback(callback) }
         }
 
@@ -399,7 +403,7 @@ internal class SystemStatusRepository(
             }.onStart { emit(false) }
 
     /**
-     * Count of satellites used in the current GPS fix, via [GnssStatus]. Emits 0
+     * Count of satellites used in the current GPS fix, via [GnssStatusCompat]. Emits 0
      * to start and whenever GNSS reports none used (searching), so the dock's
      * satellite readout reflects the no-fix case. Needs ACCESS_FINE_LOCATION; the
      * map already gates on that grant, and without it this stays 0.
@@ -426,8 +430,8 @@ internal class SystemStatusRepository(
         if (!context.hasFineLocationPermission()) return flowOf(0)
         return callbackFlow {
             trySend(0)
-            val callback = object : GnssStatus.Callback() {
-                override fun onSatelliteStatusChanged(status: GnssStatus) {
+            val callback = object : GnssStatusCompat.Callback() {
+                override fun onSatelliteStatusChanged(status: GnssStatusCompat) {
                     var usedInFix = 0
                     for (i in 0 until status.satelliteCount) {
                         if (status.usedInFix(i)) usedInFix++
@@ -438,10 +442,15 @@ internal class SystemStatusRepository(
             // Registration refusal is reported via the Boolean, not an exception,
             // so no upstream catch ever sees it — the dock would read "searching"
             // forever despite a working fix. Some head-unit GNSS HALs do refuse.
-            if (!lm.registerGnssStatusCallback(context.mainExecutor, callback)) {
+            if (!LocationManagerCompat.registerGnssStatusCallback(
+                    lm,
+                    ContextCompat.getMainExecutor(context),
+                    callback,
+                )
+            ) {
                 Log.w(TAG, "GnssStatus callback registration refused; satellite count stays 0")
             }
-            awaitClose { lm.unregisterGnssStatusCallback(callback) }
+            awaitClose { LocationManagerCompat.unregisterGnssStatusCallback(lm, callback) }
         }
     }
 

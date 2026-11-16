@@ -63,4 +63,5 @@ internal fun Context.hasBluetoothConnectPermission(): Boolean =
  * stops an install at a dialog of its own. This is the one place the check
  * lives: both the Settings install step and the diagnostics call it.
  */
-internal fun Context.hasInstallUnknownAppsAccess(): Boolean = packageManager.canRequestPackageInstalls()
+internal fun Context.hasInstallUnknownAppsAccess(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()

@@ -3,6 +3,7 @@ package io.github.seijikohara.femto.ui.settings
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
@@ -143,7 +144,8 @@ private fun requestInstallGrant(
     context: Context,
     launcher: ActivityResultLauncher<Intent>,
 ): Boolean =
-    !context.installsBlockedByPolicy() &&
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !context.installsBlockedByPolicy() &&
         try {
             launcher.launch(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()),
@@ -160,7 +162,10 @@ private fun requestInstallGrant(
 private fun Context.installsBlockedByPolicy(): Boolean =
     getSystemService<UserManager>()?.let { users ->
         users.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) ||
-            users.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    users.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            )
     } == true
 
 /**

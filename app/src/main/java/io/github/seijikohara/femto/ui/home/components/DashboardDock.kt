@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
-import com.composables.icons.lucide.Bluetooth
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Globe
 import com.composables.icons.lucide.LayoutGrid
@@ -67,10 +66,8 @@ import dev.chrisbanes.haze.rememberHazeState
 import io.github.seijikohara.femto.R
 import io.github.seijikohara.femto.data.display.DockPosition
 import io.github.seijikohara.femto.data.display.DockWidth
-import io.github.seijikohara.femto.data.display.MotionTier
 import io.github.seijikohara.femto.data.dock.DockNavId
 import io.github.seijikohara.femto.data.dock.DockStatusId
-import io.github.seijikohara.femto.data.system.SystemStatus
 import io.github.seijikohara.femto.ui.common.UpdateBadge
 import io.github.seijikohara.femto.ui.home.HomeAction
 import io.github.seijikohara.femto.ui.theme.FemtoDimens
@@ -234,11 +231,8 @@ internal fun navSpecFor(id: DockNavId): NavSpec =
  *  - Equal-weight nav buttons — [DockConfig.visibleNav] (today's factory order:
  *    Phone / Apps / Music / Navigation / Browser / Assistant / Settings, nothing
  *    hidden).
- *  - A 1 dp divider separates the actionable nav from a read-only status
- *    cluster — [DockConfig.visibleStatus] (today's factory order: cellular,
- *    hidden on telephony-less units; Wi-Fi; Bluetooth; GPS reception; and a
- *    battery indicator with icon over percent, charging read from the bolt
- *    glyph and accent tint).
+ *  - A 1 dp divider separates the actionable nav from the Acertt Car brand logo
+ *    ([DockBrandLogo]).
  *  - [updateBadge] puts a dot on the Settings button, where the Updates
  *    section offers the update (the caller has already applied the parked
  *    gate, see `HomeUiState.updateBadge`).
@@ -247,7 +241,6 @@ internal fun navSpecFor(id: DockNavId): NavSpec =
  */
 @Composable
 internal fun DashboardDock(
-    systemStatus: SystemStatus,
     onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier,
     position: DockPosition = DockPosition.BOTTOM,
@@ -255,32 +248,27 @@ internal fun DashboardDock(
     hazeState: HazeState = rememberHazeState(),
     glassConfig: GlassConfig = GlassConfig(),
     dockConfig: DockConfig = DockConfig(),
-    motionTier: MotionTier = MotionTier.STANDARD,
     updateBadge: Boolean = false,
 ) = when (position) {
     DockPosition.BOTTOM, DockPosition.TOP -> {
         HorizontalDock(
-            systemStatus = systemStatus,
             onAction = onAction,
             hazeState = hazeState,
             glassConfig = glassConfig,
             modifier = modifier,
             dockWidth = dockWidth,
             dockConfig = dockConfig,
-            motionTier = motionTier,
             updateBadge = updateBadge,
         )
     }
 
     DockPosition.LEFT, DockPosition.RIGHT -> {
         VerticalDock(
-            systemStatus = systemStatus,
             onAction = onAction,
             hazeState = hazeState,
             glassConfig = glassConfig,
             modifier = modifier,
             dockConfig = dockConfig,
-            motionTier = motionTier,
             updateBadge = updateBadge,
         )
     }
@@ -288,14 +276,12 @@ internal fun DashboardDock(
 
 @Composable
 private fun HorizontalDock(
-    systemStatus: SystemStatus,
     onAction: (HomeAction) -> Unit,
     hazeState: HazeState,
     glassConfig: GlassConfig,
     dockWidth: DockWidth,
     modifier: Modifier = Modifier,
     dockConfig: DockConfig = DockConfig(),
-    motionTier: MotionTier = MotionTier.STANDARD,
     updateBadge: Boolean = false,
 ) {
     val visibleNav = dockConfig.visibleNav
@@ -350,10 +336,7 @@ private fun HorizontalDock(
                     navOrder = dockConfig.navOrder,
                     navHidden = dockConfig.navHidden,
                     vertical = false,
-                    systemStatus = systemStatus,
-                    visibleStatus = dockConfig.visibleStatus,
                     showStatusCluster = showStatusCluster,
-                    motionTier = motionTier,
                     onAction = onAction,
                     modifier = Modifier.fillMaxHeight().padding(horizontal = FemtoDimens.DockButtonMargin),
                 )
@@ -380,12 +363,8 @@ private fun HorizontalDock(
                     }
                     if (showStatusCluster) {
                         HorizontalDockDivider()
-                        StatusCluster(
-                            status = systemStatus,
+                        DockBrandLogo(
                             vertical = false,
-                            order = dockConfig.visibleStatus,
-                            onAction = onAction,
-                            motionTier = motionTier,
                             modifier = Modifier.padding(horizontal = FemtoDimens.DockButtonMargin),
                         )
                     }
@@ -436,12 +415,8 @@ private fun HorizontalDock(
                     }
                     if (showStatusCluster) {
                         HorizontalDockDivider()
-                        StatusCluster(
-                            status = systemStatus,
+                        DockBrandLogo(
                             vertical = false,
-                            order = dockConfig.visibleStatus,
-                            onAction = onAction,
-                            motionTier = motionTier,
                             modifier = Modifier.padding(start = 20.dp),
                         )
                     }
@@ -471,13 +446,11 @@ private fun HorizontalDock(
 // status cluster stacks beneath them, and the divider faces the dashboard.
 @Composable
 private fun VerticalDock(
-    systemStatus: SystemStatus,
     onAction: (HomeAction) -> Unit,
     hazeState: HazeState,
     glassConfig: GlassConfig,
     modifier: Modifier = Modifier,
     dockConfig: DockConfig = DockConfig(),
-    motionTier: MotionTier = MotionTier.STANDARD,
     updateBadge: Boolean = false,
 ) = Surface(
     // Floating rounded glass rail, mirroring HorizontalDock on the width; on the
@@ -491,7 +464,7 @@ private fun VerticalDock(
 ) {
     val visibleNav = dockConfig.visibleNav
     // Long-press a nav button to edit; the rail swaps to the vertical reorder
-    // strip (drag + ×), keeping the status cluster in place. Back exits.
+    // strip (drag + ×), keeping the brand logo in place. Back exits.
     var editing by remember { mutableStateOf(false) }
     BackHandler(enabled = editing) { editing = false }
     // Both branches take the cluster gate from this one measured height, so edit
@@ -506,10 +479,7 @@ private fun VerticalDock(
                 navOrder = dockConfig.navOrder,
                 navHidden = dockConfig.navHidden,
                 vertical = true,
-                systemStatus = systemStatus,
-                visibleStatus = dockConfig.visibleStatus,
                 showStatusCluster = showStatusCluster,
-                motionTier = motionTier,
                 onAction = onAction,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -566,12 +536,8 @@ private fun VerticalDock(
                 }
                 if (showStatusCluster) {
                     VerticalDockDivider()
-                    StatusCluster(
-                        status = systemStatus,
+                    DockBrandLogo(
                         vertical = true,
-                        order = dockConfig.visibleStatus,
-                        onAction = onAction,
-                        motionTier = motionTier,
                         modifier = Modifier.padding(top = 20.dp),
                     )
                 }
@@ -700,10 +666,7 @@ private fun DockNavEditStrip(
     navOrder: List<DockNavId>,
     navHidden: Set<DockNavId>,
     vertical: Boolean,
-    systemStatus: SystemStatus,
-    visibleStatus: List<DockStatusId>,
     showStatusCluster: Boolean,
-    motionTier: MotionTier,
     onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -780,18 +743,12 @@ private fun DockNavEditStrip(
                 )
             }
         }
-        // The read-only status cluster stays put (same divider + cluster as the
-        // normal bar) so entering edit mode neither hides the status icons nor
-        // shifts the nav buttons. It keeps its own long-press DockEditMenu.
+        // The brand logo stays put (same divider + logo as the
+        // normal bar) so entering edit mode neither hides the logo nor
+        // shifts the nav buttons.
         if (showStatusCluster) {
             if (vertical) VerticalDockDivider() else HorizontalDockDivider()
-            StatusCluster(
-                status = systemStatus,
-                vertical = vertical,
-                order = visibleStatus,
-                onAction = onAction,
-                motionTier = motionTier,
-            )
+            DockBrandLogo(vertical = vertical)
         }
     }
     if (vertical) {
@@ -915,54 +872,27 @@ private fun DockEditChip(
 private fun DashboardDockPreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = true,
-                    cellularSignalLevel = 3,
-                    wifiConnected = true,
-                    wifiSignalLevel = 4,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = true,
-                    batteryPercent = 78,
-                    charging = true,
-                    gpsFixed = true,
-                    gpsSatelliteCount = 9,
-                ),
             onAction = {},
         )
     }
 }
 
 // The reference 853 dp 5:3 head unit: the fixed pill would overflow (the seven
-// buttons + status cluster exceed the width — the regression that clipped the
-// battery indicator), so the bar falls back to the weight-shared layout and keeps
-// every button and the whole status cluster visible.
+// buttons + brand logo exceed the width), so the bar falls back to the
+// weight-shared layout and keeps every button and the brand logo visible.
 @PreviewLightDark
 @Preview(name = "Dashboard dock (head unit)", widthDp = 853, heightDp = 64)
 @Composable
 private fun DashboardDockHeadUnitPreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = true,
-                    cellularSignalLevel = 3,
-                    wifiConnected = true,
-                    wifiSignalLevel = 4,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = true,
-                    batteryPercent = 78,
-                    charging = true,
-                    gpsFixed = true,
-                    gpsSatelliteCount = 9,
-                ),
             onAction = {},
         )
     }
 }
 
 // Narrow portrait head unit: the fixed pill does not fit, so the bar falls back to
-// the weight-shared layout; the status cluster also drops (below compactDockExtent)
+// the weight-shared layout; the brand logo also drops (below compactDockExtent)
 // and the nav buttons share the width down toward FemtoDimens.MinTouchTarget rather
 // than clipping.
 @PreviewLightDark
@@ -971,25 +901,12 @@ private fun DashboardDockHeadUnitPreview() {
 private fun DashboardDockNarrowPreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = null,
-                    cellularSignalLevel = null,
-                    wifiConnected = true,
-                    wifiSignalLevel = 2,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = false,
-                    batteryPercent = null,
-                    charging = false,
-                    gpsFixed = false,
-                    gpsSatelliteCount = 0,
-                ),
             onAction = {},
         )
     }
 }
 
-// Portrait phone mount (~400 dp): the tightest fallback — the status cluster drops
+// Portrait phone mount (~400 dp): the tightest fallback — the brand logo drops
 // and the seven nav buttons share the width, shrinking to keep every button visible
 // (they cross below MinTouchTarget here, the sanctioned narrow-width trade-off over
 // clipping — AGENTS.md#launcher-behavior).
@@ -999,19 +916,6 @@ private fun DashboardDockNarrowPreview() {
 private fun DashboardDockCompactPreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = true,
-                    cellularSignalLevel = 2,
-                    wifiConnected = true,
-                    wifiSignalLevel = 3,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = true,
-                    batteryPercent = 55,
-                    charging = false,
-                    gpsFixed = true,
-                    gpsSatelliteCount = 7,
-                ),
             onAction = {},
         )
     }
@@ -1025,46 +929,20 @@ private fun DashboardDockCompactPreview() {
 private fun DashboardDockUpdateBadgePreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = true,
-                    cellularSignalLevel = 3,
-                    wifiConnected = true,
-                    wifiSignalLevel = 4,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = true,
-                    batteryPercent = 78,
-                    charging = true,
-                    gpsFixed = true,
-                    gpsSatelliteCount = 9,
-                ),
             onAction = {},
             updateBadge = true,
         )
     }
 }
 
-// Vertical rail on a tall edge: the nav buttons share the height and the status
-// cluster stacks beneath them.
+// Vertical rail on a tall edge: the nav buttons share the height and the brand
+// logo stacks beneath them.
 @PreviewLightDark
 @Preview(name = "Dashboard dock (left rail)", widthDp = 64, heightDp = 800)
 @Composable
 private fun DashboardDockRailPreview() {
     FemtoTheme {
         DashboardDock(
-            systemStatus =
-                SystemStatus(
-                    cellularConnected = true,
-                    cellularSignalLevel = 3,
-                    wifiConnected = true,
-                    wifiSignalLevel = 4,
-                    bluetoothEnabled = true,
-                    bluetoothConnected = true,
-                    batteryPercent = 78,
-                    charging = true,
-                    gpsFixed = true,
-                    gpsSatelliteCount = 9,
-                ),
             onAction = {},
             position = DockPosition.LEFT,
         )
